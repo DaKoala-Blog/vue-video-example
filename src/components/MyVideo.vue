@@ -1,9 +1,23 @@
 <template>
-    <div class="video" ref="vcontainer">
+    <div class="video" @pointermove.prevent="handleMouseMove($event)"
+         @pointerup.prevent="stopDragging"
+         @pointerleave="handleMouseLeave"
+         @pointerenter="handleMouseEnter" ref="vcontainer">
         <video class="video__player" ref="v" @timeupdate="handleTimeUpdate" @ended="handleEnd">
             <source :src="videoSrc"/>
         </video>
-        <div class="controller">
+        <div class="controller" v-show="isControlVisible">
+            <div class="controller__progress-wrapper">
+                <div class="controller__progress" ref="p" @click="handleProgressClick($event)">
+                    <div class="controller__progress controller__progress--passed"
+                         :style="{width: videoProgressPercent}"></div>
+                    <div class="controller__dot"
+                         :style="{left: videoProgressPercent}"
+                         @pointerdown="startDragging($event)">
+                        <div class="controller__inner-dot"></div>
+                    </div>
+                </div>
+            </div>
             <div class="controller__btn-wrapper">
                 <div class="controller__btn" @click="togglePlaying">
                     <font-awesome-icon :icon="['fas', 'play']" v-if="isPaused"></font-awesome-icon>
@@ -48,7 +62,19 @@
                 isPaused: true,
                 isMuted: false,
                 videoTime: '00:00 / 00:00',
+                isDragging: false,
+                isControlVisible: false,
+                hidingEvent: null,
+                videoProgress: 0,
+                draggingStartX: 0,
+                dotOffsetX: 0,
+                progress: null,
             };
+        },
+        computed: {
+            videoProgressPercent() {
+                return `${this.videoProgress * 100}%`;
+            },
         },
         methods: {
             toggleFullscreen() {
@@ -64,6 +90,7 @@
             },
             handleTimeUpdate() {
                 this.videoTime = this.refreshTime();
+                this.videoProgress = this.video.currentTime / this.video.duration;
             },
             refreshTime() {
                 if (!this.video) {
@@ -99,9 +126,72 @@
                 this.isPaused = true;
                 this.video.pause();
             },
+            setProgress(x) {
+                const progressRect = this.progress.getBoundingClientRect();
+                let progressPercent = (x - progressRect.left) / progressRect.width;
+                if (progressPercent < 0) {
+                    progressPercent = 0;
+                } else if (progressPercent > 1) {
+                    progressPercent = 1;
+                }
+                this.video.currentTime = this.video.duration * progressPercent;
+            },
+            hideControlBar() {
+                const isFullscreen = document.webkitIsFullScreen || document.fullscreen;
+                if (isFullscreen) {
+                    this.hideCursor();
+                }
+                this.isControlVisible = false;
+            },
+            showControlBar() {
+                this.isControlVisible = true;
+            },
+            hideCursor() {
+                document.body.style.cursor = 'none';
+            },
+            showCursor() {
+                document.body.style.cursor = 'default';
+            },
+            handleProgressClick(event) {
+                const clickX = event.clientX;
+                this.setProgress(clickX);
+            },
+            startDragging(event) {
+                this.pauseVideo();
+                this.isDragging = true;
+                this.draggingStartX = event.clientX;
+            },
+            moveDragging(event) {
+                if (this.isDragging) {
+                    const offsetX = event.clientX - this.draggingStartX;
+                    this.dotOffsetX = offsetX < 0 ? 0 : offsetX;
+                    this.setProgress(event.clientX);
+                }
+            },
+            stopDragging() {
+                this.isDragging = false;
+                this.dotOffsetX = 0;
+            },
+            handleMouseMove(event) {
+                this.showControlBar();
+                this.showCursor();
+                if (this.hidingEvent !== null) {
+                    clearInterval(this.hidingEvent);
+                }
+                this.hidingEvent = setInterval(this.hideControlBar, 3000);
+                this.moveDragging(event);
+            },
+            handleMouseLeave() {
+                this.hideControlBar();
+                this.stopDragging();
+            },
+            handleMouseEnter() {
+                this.showControlBar();
+            },
         },
         mounted() {
             this.video = this.$refs.v;
+            this.progress = this.$refs.p;
         },
     };
 </script>
@@ -153,5 +243,49 @@
     .controller__btn--fullscreen {
         position: absolute;
         right: 15px;
+    }
+
+    .controller__progress-wrapper {
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+
+    .controller__progress {
+        height: 5px;
+        position: relative;
+        width: calc(100% - 30px);
+        border-radius: 100px;
+        background: #dcdcdc;
+        cursor: pointer;
+    }
+
+    .controller__progress--passed {
+        position: absolute;
+        top: 0;
+        left: 0;
+        background: #409EFF;
+    }
+
+    .controller__dot {
+        position: absolute;
+        z-index: 50;
+        left: 0;
+        top: -5px;
+        width: 15px;
+        height: 15px;
+        border-radius: 50%;
+        background-color: #fff;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+
+    .controller__inner-dot {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background-color: #409EFF;
     }
 </style>
